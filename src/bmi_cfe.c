@@ -421,7 +421,7 @@ int read_init_config_cfe(const char* config_file, cfe_state_struct* model, doubl
     // Additionally,
 
     for (i = 0; i < config_line_count; i++) {
-        char *param_key, *param_value;
+        char *param_key, *param_value, *param_units;
         fgets(config_line, max_config_line_length + 1, fp);
 #if CFE_DEGUG >= 3
         printf("Line value: ['%s']\n", config_line);
@@ -429,11 +429,14 @@ int read_init_config_cfe(const char* config_file, cfe_state_struct* model, doubl
         char* config_line_ptr = config_line;
         config_line_ptr = strsep(&config_line_ptr, "\n");
         param_key = strsep(&config_line_ptr, "=");
-        param_value = strsep(&config_line_ptr, "=");
+        param_value = strsep(&config_line_ptr, "[");
+        param_units = strsep(&config_line_ptr, "]");
+
 
 #if CFE_DEGUG >= 2
         printf("Config Value - Param: '%s' | Value: '%s'\n", param_key, param_value);
 #endif
+        printf(" %s | Value: %s | Units: %s\n", param_key, param_value, param_units);
 
         if (strcmp(param_key, "forcing_file") == 0) {
             model->forcing_file = strdup(param_value);
