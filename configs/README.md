@@ -19,13 +19,18 @@ Example configuration files are provided in this directory. To build and run the
 | gw_storage | *double* |   |  meters/meters [m/m] | parameter_adjustable |  | initial condition for groundwater reservoir - it is the ground water as a decimal fraction of the maximum groundwater storage (max_gw_storage) for the initial timestep |
 | alpha_fc | *double* |   |   | parameter_adjustable |  | field capacity |
 | soil_storage| *double* |   | meters/meters [m/m] | parameter_adjustable |  | initial condition for soil reservoir - it is the water in the soil as a decimal fraction of maximum soil water storage (smcmax * depth) for the initial timestep |
-| K_nash | *int* |   |   | parameter_adjustable |   | number of Nash lf reservoirs (optional, defaults to 2, ignored if storage values present)  |
+| N_nash | *int* |   |   | parameter_adjustable |   | number of Nash lf reservoirs (optional, defaults to 2, ignored if storage values present)  |
+| K_nash | *double* |   | 1/meters [m^-1]  | parameter_adjustable | subsurface runoff | Nash Config param for lateral subsurface runoff   |
 | *K_lf | *double* |   |   | parameter_adjustable |  | Nash Config param - primary reservoir  |
 | nash_storage | *double* |   |   | parameter_adjustable |  | Nash Config param - secondary reservoir   |
 | giuh_ordinates   | *double* |   |   | parameter_adjustable |  | Giuh ordinates in dt time steps   |
 | num_timesteps  | *int* |   |  | time_info |  | set to `1` if `forcing_file=BMI`   |
 | verbosity | *int* | `0`-`3`  |   | option |   |  prints various debug and bmi info  |
 | surface_partitioning_scheme | *char* | `Xinanjiang` or `Schaake`  |  | parameter_adjustable | direct runoff |    |
+| surface_runoff_scheme | *char* | GIUH or NASH_CASCADE | | parameter_adjustable | surface runoff | also supports 1 for GIUH and 2 for NASH_CASCADE; default is GIUH |
+| N_nash_surface | *int* |   |   | parameter_adjustable | surface runoff | number of Nash reservoirs for surface runoff   |
+| K_nash_surface | *double* |   | 1/meters [m^-1]  | parameter_adjustable | surface runoff | Nash Config param for surface runoff   |
+| nash_storage_surface | *double* |   | meters [m]  | parameter_adjustable | surface runoff | Nash Config param; reservoir surface storage; default is zero storage |
 | *a_Xinanjiang_inflection_point_parameter | *double* |   |  | parameter_adjustable | direct runoff | when `surface_partitioning_scheme=Xinanjiang`   |
 | *b_Xinanjiang_shape_parameter=1  | *double* |   |   | parameter_adjustable  | direct runoff | when `surface_partitioning_scheme=Xinanjiang`   |
 | *x_Xinanjiang_shape_parameter=1  | *double* |   |   | parameter_adjustable | direct runoff | when `surface_partitioning_scheme=Xinanjiang`   |
@@ -34,7 +39,6 @@ Example configuration files are provided in this directory. To build and run the
 | max_rootzone_layer | *double* |  | meters [m] | parameter_adjustable | AET | layer of the soil that is the maximum root zone depth. That is, the depth of the layer where the AET is drawn from |
 | soil_layer_depths | 1D array |  | meters [m] | parameter_adjustable | AET | an array of depths from the surface. Example, soil_layer_depths=0.1,0.4,1.0,2.0
 | is_sft_coupled                   | *boolean* | True, true or 1  |  | coupling parameter | `ice_fraction-based runoff` | when `CFE coupled to SoilFreezeThaw`|
-
 
 ## Direct runoff options in CFE
 
@@ -48,6 +52,13 @@ If the **Xinanjiang** scheme is choosen, four parameters need to be included in 
 2. b_Xinanjiang_shape_parameter
 3. x_Xinanjiang_shape_parameter
 4. urban_decimal_fraction 
+
+## Surface runoff options in CFE
+The user has the option to pick a particular surface runoff (aka surface runoff scheme) method:
+
+1. GIUH-based surface runoff (configuration: `surface_runoff_scheme=GIUH`). This is the default option.
+2. Nash_Cascade-based surface runoff (configuration: `surface_runoff_scheme=NASH_CASCADE`). In this method, GIUH is used to derive Nash cascade parameters K and N.
+
 
 ## Rootzone-based Actual Evapotranspiration (AET)
 The user has the option to turn ON and OFF rootzone-based AET, default option is OFF. To turn it ON, the following parameters need to be included in the configuration file.

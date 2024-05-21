@@ -30,7 +30,7 @@ extern void cfe(
         double *gw_reservoir_storage_deficit_m_ptr,
         struct conceptual_reservoir *gw_reservoir_struct,
         double *flux_from_deep_gw_to_chan_m_ptr,
-        double *giuh_runoff_m_ptr,
+        double *surface_runoff_m_ptr,
         int num_giuh_ordinates,
         double *giuh_ordinates_arr,
         double *runoff_queue_m_per_timestep_arr,
@@ -38,10 +38,12 @@ extern void cfe(
         int num_lateral_flow_nash_reservoirs,
         double K_nash,
         double *nash_storage_arr,
+	struct nash_cascade_parameters *nash_surface_params,
         struct evapotranspiration_structure *evap_struct,
         double *Qout_m_ptr,
         struct massbal *massbal_struct,
-        double time_step_size
+        double time_step_size,
+	int surface_runoff_scheme
     ){                      // #######################################################################
 // CFE STATE SPACE FUNCTION // #######################################################################
 
@@ -50,8 +52,6 @@ extern void cfe(
 // ####        Note: all of thes variables are storages in [m] or fluxes in [m/timestep]    
     double soil_reservoir_storage_deficit_m = *soil_reservoir_storage_deficit_m_ptr;   // storage [m]
     
-    /* xinanjiang_dev: rename to the general "direct runoff"
-    double Schaake_output_runoff_m          = *Schaake_output_runoff_m_ptr;            // Schaake partitioned runoff this timestep [m]*/
     double direct_output_runoff_m          = *flux_output_direct_runoff_m;            // Schaake partitioned runoff this timestep [m]*/
 
     double infiltration_depth_m             = *infiltration_depth_m_ptr;               // Schaake partitioned infiltration this timestep [m]
@@ -59,9 +59,9 @@ extern void cfe(
     double flux_lat_m                       = *flux_lat_m_ptr;                         // water moved from soil reservoir to lateral flow Nash cascad this timestep [m]
     double gw_reservoir_storage_deficit_m   = *gw_reservoir_storage_deficit_m_ptr;     // deficit in gw reservoir storage [m]
     double flux_from_deep_gw_to_chan_m      = *flux_from_deep_gw_to_chan_m_ptr;        // water moved from gw reservoir to catchment outlet nexus this timestep [m]
-    double giuh_runoff_m                    = *giuh_runoff_m_ptr;                      // water leaving GIUH to outlet this timestep [m]
+    double surface_runoff_m                 = *surface_runoff_m_ptr;                   // water leaving GIUH or NASH cascade reservoir to outlet this timestep [m]
     double nash_lateral_runoff_m            = *nash_lateral_runoff_m_ptr;              // water leaving lateral subsurface flow Nash cascade this timestep [m]
-    double Qout_m                           = *Qout_m_ptr;                             // the total runoff this timestep (GIUH+Nash+GW) [m]
+    double Qout_m                           = *Qout_m_ptr;                             // the total runoff this timestep (Surface+Nash+GW) [m]
 
     // LOCAL VARIABLES, the values of which are not important to describe the model state.  They are like notes on scrap paper.
  
@@ -248,13 +248,16 @@ extern void cfe(
   // Solve the convolution integral ffor this time step 
 
   /* xinanjiang_dev
-  giuh_runoff_m = convolution_integral(Schaake_output_runoff_m,num_giuh_ordinates,    */
-  giuh_runoff_m = giuh_convolution_integral(direct_output_runoff_m,num_giuh_ordinates,
-                                       giuh_ordinates_arr,runoff_queue_m_per_timestep_arr);
-  massbal_struct->vol_out_giuh+=giuh_runoff_m;
+  surface_runoff_m = convolution_integral(Schaake_output_runoff_m,num_giuh_ordinates,    */
+  if (surface_runoff_scheme == GIUH)
+    surface_runoff_m = giuh_convolution_integral(direct_output_runoff_m,num_giuh_ordinates,
+					      giuh_ordinates_arr,runoff_queue_m_per_timestep_arr);
+  else if (surface_runoff_scheme == NASH_CASCADE)
+    surface_runoff_m =  nash_cascade_surface_runoff(direct_output_runoff_m, nash_surface_params);
 
-  massbal_struct->volout+=giuh_runoff_m;
-  massbal_struct->volout+=flux_from_deep_gw_to_chan_m;
+  massbal_struct->vol_out_surface += surface_runoff_m;
+  massbal_struct->volout          += surface_runoff_m;
+  massbal_struct->volout          += flux_from_deep_gw_to_chan_m;
   
   // Route lateral flow through the Nash cascade.
   nash_lateral_runoff_m = nash_cascade(flux_lat_m,num_lateral_flow_nash_reservoirs,
@@ -266,7 +269,7 @@ extern void cfe(
         fprintf(out_debug_fptr,"%d %lf %lf  %lf\n",tstep,flux_lat_m,nash_lateral_runoff_m,flux_from_deep_gw_to_chan_m);
 #endif
 
-  Qout_m = giuh_runoff_m + nash_lateral_runoff_m + flux_from_deep_gw_to_chan_m;
+  Qout_m = surface_runoff_m + nash_lateral_runoff_m + flux_from_deep_gw_to_chan_m;
     
     // #### COPY BACK STATE VALUES BY POINTER REFERENCE SO VISIBLE TO FRAMEWORK    ####    
     *soil_reservoir_storage_deficit_m_ptr = soil_reservoir_storage_deficit_m;
@@ -280,7 +283,7 @@ extern void cfe(
     *flux_lat_m_ptr                       = flux_lat_m;
     *gw_reservoir_storage_deficit_m_ptr   = gw_reservoir_storage_deficit_m;
     *flux_from_deep_gw_to_chan_m_ptr      = flux_from_deep_gw_to_chan_m;
-    *giuh_runoff_m_ptr                    = giuh_runoff_m;
+    *surface_runoff_m_ptr                 = surface_runoff_m;
     *nash_lateral_runoff_m_ptr            = nash_lateral_runoff_m;
     *Qout_m_ptr                           = Qout_m;
 
@@ -289,42 +292,6 @@ extern void cfe(
 } // END CFE STATE SPACE FUNCTIONS
   //####################################################################################################
   //####################################################################################################
-
-
-
-//##############################################################
-//###################   NASH CASCADE   #########################
-//##############################################################
-extern double nash_cascade(double flux_lat_m,int num_lateral_flow_nash_reservoirs,
-                           double K_nash,double *nash_storage_arr)
-{
-//##############################################################
-// Solve for the flow through the Nash cascade to delay the 
-// arrival of the lateral flow into the channel
-//##############################################################
-// local vars
-int i;
-double outflow_m;
-static double Q[MAX_NUM_NASH_CASCADE];
-
-//Loop through reservoirs
-for(i = 0; i < num_lateral_flow_nash_reservoirs; i++)
-  {
-  Q[i] = K_nash*nash_storage_arr[i];
-  nash_storage_arr[i]  -= Q[i];
-
-  if (i==0) nash_storage_arr[i] += flux_lat_m; 
-  else      nash_storage_arr[i] +=  Q[i-1];
-  }
-
-/*  Get Qout */
-outflow_m = Q[num_lateral_flow_nash_reservoirs-1];
-
-//Return the flow output
-return (outflow_m);
-
-}
-
 
 
 //##############################################################
